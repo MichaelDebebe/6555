@@ -1,0 +1,790 @@
+---
+title: "Laboration 3"
+author: "Michael Debebe & Åke Rosvall"
+date: '2021-07-17'
+output: pdf_document
+header-includes:
+- \usepackage{float}
+- \usepackage{longtable}
+- \usepackage{caption}
+- \usepackage{fancyhdr}
+- \usepackage{titling}
+- \usepackage[swedish, english]{babel}
+- \renewcommand{\headrulewidth}{0pt}
+- \renewcommand{\and}{\\}
+- \pretitle{\centering\vspace{0cm}{\large Labbrapport i Statistik \par}\vspace{4cm}\Huge\textbf}
+- \posttitle{\vspace{1cm}\large\textbf{}\par}
+- \preauthor{\centering\vspace{4cm}\normalsize}
+- \postauthor{\par\vspace{4cm}}
+- \predate{\centering{\normalsize Avdelningen för Statistik och maskininlärning \\
+  Institutionen för datavetenskap \\ Linköpings universitet \par}}
+- \postdate{\par\vspace{2cm}}
+- \raggedbottom
+---
+
+<!-- Väljer språk till svenska för automatiska titlar -->
+\selectlanguage{swedish}
+
+<!-- Byter språket på figur- och tabellbeskrivningar till angivna namn -->
+\captionsetup[table]{name = Tabell}
+\setcounter{table}{0}
+\captionsetup[figure]{name = Figur}
+\setcounter{figure}{0}
+
+<!-- Anger att tabellbeskrivningar hamnar ovanför tabellen -->
+\floatstyle{plaintop}
+\restylefloat{table}
+
+<!-- Anger sidnumreringens position -->
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\pagestyle{fancy}
+
+<!-- Tar bort sidnumrering för förteckningar och titelsidan -->
+\pagenumbering{gobble}
+
+<!-- Anger sidbrytning -->
+\clearpage
+
+<!-- Skapar en innehållsförteckning och anger djupet av rubrikerna som ska visas -->
+\setcounter{tocdepth}{3}
+\tableofcontents
+
+<!-- Anger sidbrytning -->
+\clearpage
+
+<!-- Börjar sidnumreringen på sida 1 efter att alla förteckningar visats -->
+\pagenumbering{arabic}
+\setcounter{page}{1}
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<!-- Börjar med kapitel 1 -->
+#  1. Introduktion
+I denna labb kommer huvudsyftet vara att undersöka hur bortfall påverkar analyser av urval. Vi kommer även testa olika sätt att lösa dessa problem som kan uppstå. Vi kommer använda oss av ett riktigt och ett simulerat exempel. I den första delen kommer vi försöka ge läsaren en bild av hur bortfallen ser ut, och i den andra delen kommer vi att arbeta med det riktiga exemplet.
+
+```{r echo = FALSE, include = FALSE}
+#include = FALSE tar bort alla utskrifter som kommer från laddning av data eller paket
+options(scipen = 100)
+libraries <- c("survey", "dplyr", "ggplot2", "knitr", "GGally", "kable", "irr", "psych", "MASS")
+invisible(lapply(libraries, require, character.only = TRUE))
+# set.seed(666)
+
+```
+
+
+```{r, echo = FALSE}
+#här läser vi in datan som ska användas
+load(url("https://github.com/vriken/732G38/blob/production/732G38_Laboration_tre/svy2010.Rdata?raw=true"))
+
+``` 
+<!-- Anger sidbrytning -->
+\clearpage
+
+
+
+
+\newpage
+# 2 Bortfallsstudie med simulerade data
+
+## 2.1 Simulera populationen 
+Det som demonstreras nedan är R som kompenserar för bortfall för ett flertal kategoriska variabler.
+
+"Vi kommer inledningsvis simulera den population som vi kommer utgå från i resterande laboration. Vi utgårifrån egenskaper för Linköping kommuns befolkningsdata från 2018 (SCB)."
+
+```{r sex_age, results = "markup"}
+sex <- sample(c("Man", "Kvinna"), 
+# här skapar vi ett "sample" med två kön
+              size = 104962, 
+# här bestämmer vi storleken på vårat "sample"
+              replace = TRUE, 
+# och sätter replace = TRUE, rakt upp och ner
+              prob = c(54782, 50180)/104962) 
+# här sätter vi en sannolikhetsvektor för våran sex-variabel. En för varje kön.
+
+age <- sample(c("15-24", "25-34", "35-44", "45-54", "55-64"), 
+# Här skapar vi ett "sample" på fem stycken åldersgrupper.
+              size = 104962, 
+# och storleken ska vara samma som våran sex-variabel eftersom varje kön måste ha en ålder.
+              replace = TRUE, 
+# och replace = TRUE
+              prob = c(23358,25605,19969,19800,16230)/104962) 
+# här skapar vi en ny sannolikhetsvektor för age-variabeln. En för varje åldersgrupp
+
+sim_pop <- data.frame(sex = sex, age = age) 
+# och till slut skapar vi en dataframe som heter sim_pop med våra två kolumner, sex och age.
+```
+
+a) Beskriv vad som sker i ovanstående kod genom att kommentera varje rad och beskriv sedan vilken information som sim_pop innehåller.
+
+Koden tar ett "sample" från "Man", och "Kvinna". Och gör en lista med dessa två som är 104962 rader lång. Sannolikheten för män respektive kvinnor är 54782/`r length(sex)`, och 50180/`r length(sex)`, detta är dock bara den första kolumnen för könen. Den andra kolumnen skriver åldrarna och är listan som syns ovan, åldrarna som tas i hänsyn är 15-64.
+Storleken är likadan eftersom varje kön måste ha en ålder. Sannolikheterna för detta är däremot annorlunda och syns också ovan, där varje element i vektorn delas på `r length(sex)`. Precis som i den första sannolikhetsvektorn med könen. Sedan tar vi dessa två kolumner och sätter in de i en dataframe som heter sim_pop.
+<!-- Anger sidbrytning -->
+\clearpage
+
+
+\newpage
+```{r assault, results = "markup"}
+sim_pop$pAssault <- .001 
+# här sätter vi en standardsannolikhet för att utsättas för misshandel för alla åldersgrupper
+
+sim_pop$pAssault[sim_pop$age == "15-24"] <- .05 
+# här ändrar vi sannolikheten för åldersgruppen 15-24. 
+#Detta eftersom det var större sannolikhet för yngre personer att -
+# - utsättas för misshandel.
+sim_pop$pAssault[sim_pop$age == "25-34"] <- .02 
+# här ändrar vi sannolikheten för åldersgruppen 25-34
+sim_pop$pAssault[sim_pop$age == "35-44"] <- .005 
+# här ändrar vi sannolikheten för åldersgruppen 35-44
+
+sim_pop$pAssault <- sim_pop$pAssault + (1.5 * sim_pop$pAssault * as.numeric(sim_pop$sex == "Man")) 
+# för män adderar vi 1.5 gånger sannolikheten för de respektive -
+# - åldersgrupperna att utsättas för misshandel. 
+# Detta eftersom män har en större benägenhet för att bli utsatta för misshandel.
+sim_pop$assault <- rbinom(n = length(sex), size = 1, prob = sim_pop$pAssault) 
+# här använder vi binomialföredelningen för att räkna ut-
+# -sannolikheten för att en person har råkat ut för misshandel. 
+# Vi använder oss av sannolikheten från pAssault.
+```
+
+b) Beskriv vad som sker i ovanstående kod genom att kommentera varje rad.
+
+Koden skapar en ny kolumn i sim pop med samma storlek som de andra och sätter alla värden i kolumnen till .001. Sedan sätter vi värdet på denna kolumnen till .05 för åldersgruppen 15-24, .02 för 25-34, och slutligen .005 för 35-44. Detta eftersom olika åldersgrupper har olika benägenhet att bli utsatta för misshandel. Sedan tar vi i hänsyn att män har en större sannolikhet att bli utsatta för misshandel och tar alla mäns sannolikheter gånger 1.5. Sedan skapar vi en till kollumn som räknar ut med hjälp av binomialfördelningen och sannolikheten som räknades ut tidigare.
+
+c) Beskriv skillnanden mellan variablerna pAssault och assault.
+
+pAssault beskriver sannolikheten för olika åldersgrupper och kön att bli utsatt för misshandel. Detta medans assault beskriver om personen i ett visst index har blivit utsatt för misshandel eller inte.
+
+d) Vilka grupper har stört respektive minst risk att utsättas för brott i vår simulerade population enligt koden ovan?
+`
+
+Grupperna med störst risk att utsättas för våld i den simulerade populationen är män i åldersgruppen 15-24 med en sannolikhet på 12.5%. Den grupp med minst risk att utsättas för våld är kvinnor som är 45+ och män med en sannolikhet på 0.1%
+<!-- Anger sidbrytning -->
+\clearpage
+
+
+\newpage
+
+Vi ska också simulera en variabel som inte alls har med utsattheten för brott att göra. Lägg till variabeln stjärntecken i populationen på följane sätt:
+```{r astro, results = "markup"}
+#Här skapar vi ett sample för de diverse stjärntecknen och tilldelar varje kön ett slumptecken
+sim_pop$astroSign <- sample(c("Skorpion", "Skytt", "Tvilling", "Stenbock", "Jungfru", "Lejon", "Oxe"), 
+                            size = length(sex), replace = TRUE)
+```
+
+e) Förklara varför denna kod generarar en variabel som inte har något med utsattheten för brott att göra.
+
+Denna kod har inget att göra med utsattheten för brott att göra eftersom sannolikheten för ett stjärntecken är helt slumpmässigt. Detta pga att den inte tar i hänsyn till pAssault, eller någon annan slags fördelning. Det som bestämmer samplet i detta fall är vårat seed.
+
+f) Hur **många** har varit utsatta för brott i din population totalt och i de olika åldersgrupperna? Det är dessa värden som anses vara sanningen som vi ska försöka skatta i efterföljand euppgifter.
+
+Vi får ut antalet personer som har utsatts för brott genom följande kod.
+```{r antal ettor, results = "markup"}
+knitr::opts_chunk$set(echo = T, 
+# här skriver vi ut att vi vill visa koden i denna chunk
+                      results = "hide") 
+# men vi vill inte skriva ut resultaten från koden
+
+amount_of_ones <- table(sim_pop$assault)
+# här skapar vi ett table med alla assault nollor och ettor
+amount_of_ones <- amount_of_ones[names(amount_of_ones) == 1]
+# här filtrerar vi för ettor i vårat table.
+```
+Detta är det antal som koden ovan kommer fram till: `r amount_of_ones[1]`
+
+g) Hur stor är **andelen** som varit utsatta för brott?
+
+Andelen som utsatts för brott fås genom att ta `r amount_of_ones[1]` delat på våran populationstorlek vilket är `r length(sex)`. Detta nummer summerar till `r (amount_of_ones[1]/length(sex))*100`%
+
+<!-- Anger sidbrytning -->
+\clearpage
+
+\newpage
+## 2.2 Skapa en bortfallsmodell
+Vi ska nu skapa en bortfallsmodell för vår population, d.v.s. sannolikheten för att en person deltar i studien eller inte. Vi kommer nu att styra exakt hur vårt bortfall ser ut och vilka variabler som kommer påverka bortfallet, något som vi inte alls har vetskap om i en riktig urvalsundersökning.
+
+Vi gör detta genom att introducera en sannolikhet för ett svar som vi sedan använder för att simulera bortfallet i studien. Vi vet sedan tidigare att kön och åldersgrupp har en påverkan på utsattheten så vi väljer att skapa en bortfallsmodell baserat på dessa variabler.
+
+```{r bortfallsmodell, results = "markup"}
+#här skapar vi sannolikheterna för olika åldrars respons samt en specifik repsons för män
+sim_pop$response <- 0.95
+
+sim_pop$response[sim_pop$age=="15-24"] <- 0.35
+sim_pop$response[sim_pop$age=="25-34"] <- 0.5
+sim_pop$response[sim_pop$age=="35-44"] <- 0.65
+sim_pop$response[sim_pop$age=="45-54"] <- 0.85
+
+sim_pop$response <- sim_pop$response-(0.15* as.numeric(sim_pop$sex=="Man"))
+```
+
+På den första raden så sätter vi en standardrespons för alla åldersgrupper på 95%. Sedan sätter vi responssannolikheten för åldersgrupperna 15-24, 25-34, 35-44 och 45-54. Dessa sattes till 35%, 50%, 65% och 85% respektive. Sedan sätter vi responssannolikheten 15% mindre för alla män. Beroende på vad dessa sannolikheter kommer ifrån så tror jag att det kan vara en bra bortfallsmodell. Detta för att vikterna förändras från vissa av respondenterna i fallet att man ska testa vikter.
+
+
+
+a) Beskriv respektive antaganden som en undersökning kan ha, och motivera varför/varför inte den är lämplig för vår bortfallsmodell.
+
+Det finns tre typer av bortfallsantaganden, MCAR (Missing completly at random) vilket innebär att man tappat bort en observation. Detta är då inte rimligt, då detta är en simulation i vårt fall. MAR (Missing at random) som innebär att bortfallet beror på faktorer såsom kön, ålder och hemort, vilket skulle kunna vara rimligt i vårt eventuella bortfall. NMAR (Not missing at random) tar samma saker som MAR i beaktan men också tar hänsyn till ifall respodenten varit utsatt för brott eller ej. Därav dras slutsatsen att NMAR är det mest lämpliga bortfallsantagandet i vårt fall.
+
+
+
+b) Enligt den skapade modellen, vad är det för antagande vi gör om bortfallet; MCAR, MAR eller NMAR? 
+
+Det antagande vi kan göra om detta bortfall är ett MAR, detta eftersom det inte är något bortfall som saknas, detta då vi baserar svarsbenägheten hos de enskilda respondenterna på bakgrundsinformation som ålder och kön. 
+
+c) Vad är sannolikheten att specifikt en man i åldersgruppen 25-34 deltar i vår studie?
+
+Sannolikheten för att en man i åldersgruppen 25-34 år deltar i vår studie är `r .35`.
+<!-- Anger sidbrytning -->
+\clearpage
+
+
+\newpage
+
+## 2.3 Urval och simulerat bortfall
+Dra ett OSU av storlek n= 4000 från den simulerade populationen.  Detta urval kommer representerade tillfrågade individerna ur populationen. Skapa ett surveyobjekt (med allt vad det innebär) och skatta totalen och andelen i populationen som utsatts för brott med tillhörande konfidensintervall. Skatta även utsattheten i de olika åldersgrupperna. För dessa analyser förutsätter vi att alla de tillfrågade individernaockså svarade på vår undersökning.
+
+
+
+
+a) Vad får du för resultat för punkt- och intervallskattningar för totalen och medelvärdet (andelen)? Täcker intervallen de sanna värdena, från 2.1, i populationen?
+
+
+
+```{r, echo = FALSE, message = FALSE}
+#här skapar vi ett OSU index, ett urval, och en ändlighetskorrektion från sim_pop. Indexet har storleken 4000, urvalet dras med hjälp av binomialfördelningen.
+
+OSUindex <- sample(size = 4000, 1:nrow(sim_pop), replace = FALSE)
+mittUrval <- sim_pop[OSUindex,]
+
+mittUrval$respInd <- rbinom(n = length(mittUrval$response),
+                            size = 1,
+                            prob = mittUrval$response)
+
+urval <- sample(x = 1:nrow(sim_pop),
+                size = 4000,
+                replace = FALSE)
+AK <- rep(nrow(sim_pop), 4000)
+
+OSUsim <-svydesign(ids = ~1,data = mittUrval, fpc =  AK)
+ANDELAR <-svymean(~assault, design = OSUsim)
+TOTAL <-svytotal(~assault, design = OSUsim)
+
+```
+Intervallskattningar
+`r kable(confint(ANDELAR, level =0.95))`
+`r kable(confint(TOTAL, level = 0.95))`
+
+Punktskattningar
+`r kable(svymean(~assault, design = OSUsim))`
+`r kable(svytotal(~assault, design = OSUsim))`
+
+Det sanna värdet från 2.1 var `r amount_of_ones[1]` för totalen i populationen och för andelen `r (amount_of_ones[1]/length(sex))*100`%, i båda fallen täcker intervallen de sanna värdena.
+
+```{r, echo = FALSE}
+ones_assaulted <- table(mittUrval$assault)
+# här skapar vi ett table med alla assault nollor och ettor
+ones_assaulted <- ones_assaulted[names(ones_assaulted) == 1]
+# här filtrerar vi för ettor i vårat table.
+
+#här skapar vi det vi behöver för vårat KI
+n = 4000
+k = ones_assaulted
+pbar = k/n
+SE = sqrt(pbar*(1-pbar)/n)
+E = qnorm(.975)*SE
+
+```
+
+
+b) Hur stor svarsandel råder i undersökningen?
+
+```{r andel svar, results = "markup"}
+# här får vi reda på hur många i undersökningen som svarade.
+mittUrvalSvarande <- mittUrval[mittUrval$respInd==1, ]
+```
+
+Svarsandelen i undersökningen summerar till `r (nrow(mittUrvalSvarande)/4000)*100` %
+
+
+Här kan vi också se summeringen för vårat urval.
+```{r, echo = FALSE}
+#här summerar vi för urvalet.
+kable(summary(mittUrval[,3:7]))
+```
+`r kable(summary(mittUrval[,3:7]))`
+
+Här skapar vi vårat survey objekt. AK är våran ändlighetskorrektion med storlek 4000
+```{r, results = "markup"}
+#Här skapar vi ett surveyobjekt med våran ändlighetskorrektion för alla variabler.
+survey_objekt <- svydesign(ids = ~1,
+                           data = sim_pop[urval, c("sex", "age", "pAssault", "assault", "astroSign", "response")],
+                           fpc = AK)
+```
+
+```{r, echo = FALSE}
+#Här ändrar vi våran responsindikator med binomialfördelningen med hjälp av våra tidigare skapade responssannolikheter.
+survey_objekt$variables$respInd <- rbinom(n = length(mittUrval$response),
+                            size = 1,
+                            prob = mittUrval$response)
+```
+
+* c) Vad händer med skattningarna jämfört med a)?
+
+```{r, echo = FALSE}
+ones_assaulted_object <- table(survey_objekt$variables$assault)
+ones_assaulted_object <- ones_assaulted_object[2]
+# här skapar vi ett table med alla assault ettor
+
+objektSvarande <- survey_objekt[survey_objekt$variables$respInd == 1,]
+# här kollar vi hur många från vårat objekt som har svarat
+
+n = 4000
+k = ones_assaulted_object
+pbar = k/n
+SE = sqrt(pbar*(1-pbar)/n)
+E = qnorm(.975)*SE
+```
+
+```{r, results = "markup"}
+AKK <-rep(nrow(sim_pop), nrow(mittUrvalSvarande))
+
+mitturvalsvarades <-svydesign(ids = ~1, data =  mittUrvalSvarande, fpc = AKK)
+
+ kk <-confint((svytotal(~assault,design = mitturvalsvarades)), level = 0.95)
+kkz <-confint((svymean(~assault,design = mitturvalsvarades)), level = 0.95)
+```
+
+`r kable(kk)`
+`r kable(kkz)`
+
+Bortfallet verkar ha en något sänkade effekt på skattningarna, detta syns genom att skattningar är väldigt mycket lägre än i 2.3a.
+ 
+ d) Vilken sammanfattande effekt verkar bortfallet ha på skattningarna? Täcker intervallen det sanna
+värdet nu?
+
+Effekten som blir är att skattningarna blir lägre då den grupp som varit som mest våldsdrabbad inte är med och bidrar med svar.
+
+ e) Skatta totalen och tillhörande intervall per åldersgrupp och jämför med de sanna värdena. Tolka resultatet.
+
+```{r, echo = FALSE, results ="markup"}
+Total_skattning_aldersgrupp <- svyby(~assault, by = ~age, design = mitturvalsvarades, FUN = svytotal)
+confint_aldersgrupp <-confint(Total_skattning_aldersgrupp, level = 0.95)
+```
+`r confint_aldersgrupp`
+
+I samtliga av åldersgrupperna sker det en väldigt låg åldersskattning, intervallet som täcks är 15-24
+  
+
+\clearpage
+
+
+\newpage
+
+## 2.4 Bortfallsanalys
+a) Genom att titta på p-värdena för vardera parameterskattning, vilka variabler har ett signifikant samband med svarsfrekvensen?
+```{r, results = "markup"}
+  bortfallsanalys <- glm(respInd ~ age + sex + astroSign,
+family = binomial(logit),
+data = mittUrval)
+summary(bortfallsanalys)
+```
+Utifrån utskriften går det att se hur det finns ett signifikant samband vad gäller svarsfrekvensen för åldersgrupperna 25-34, 35-44, 45-54, 55-64 samt det manliga könet.
+
+
+b) Stämmer detta med den bortfallsmodell som vi skapade tidigare i laborationen?
+
+
+\pagebreak
+
+\newpage
+
+# 3. Bortfallskalibrering
+## 3.1 Beräkna populationstotalerna
+```{r popoulationstotalerna, results="markup"}
+mod_mat <- model.matrix(~ as.factor(age)+ as.factor(sex), sim_pop)
+pop_vector <- colSums(mod_mat)
+```
+
+a) Beräkna hur många observationer som finns utav den kategori som saknas i dina utvalda variabler.
+
+`r kable(pop_vector)`
+
+De observationer som saknas är från åldersgruppen 15-24 och uppgår till `r pop_vector[1] - sum(pop_vector[2:5])`, även könsgruppen kvinnor som uppgår till `r pop_vector[1] - pop_vector[6]`.
+
+
+\clearpage
+
+
+\newpage
+ 
+## 3.2 Kalibreringsmodell
+
+```{r sa, results = "markup", message = FALSE}
+calMittUrvalSvarande <- calibrate(survey_objekt,
+formula = ~as.factor(age) + as.factor(sex),
+population = pop_vector)
+```
+```{r skatta, results="markup"}
+skattatotalen <-svytotal(~assault, design =calMittUrvalSvarande)
+skattaandelen <-svymean(~assault,design=calMittUrvalSvarande)
+```
+
+### Lägga till onödiga variabler
+```{r onodiga, results="markup", message=FALSE}
+mod_mat1 <- model.matrix(~ as.factor(age) + as.factor(sex) + as.factor(astroSign), sim_pop)
+pop_vector1 <- colSums(mod_mat1)
+```
+
+```{r stjarntecken, results="markup", message=FALSE}
+nycal <- calibrate(survey_objekt,
+formula = ~as.factor(age) +~as.factor(sex)+~as.factor(astroSign),
+population = pop_vector1)
+skattattotalen <-svytotal(~assault, design =nycal)
+skattatandelen <-svymean(~assault,design=nycal)
+```
+\pagebreak    
+
+### Kalibrera med en tom modell
+Skapa en ny kalibreringsmodell där inga variabler läggs till. En tom modell utan variabler anges med:
+```{r , results="markup"}
+mod_mat2 <- model.matrix(~1, sim_pop)
+pop_vector2<- colSums(mod_mat2)
+
+tomcal <- calibrate(survey_objekt,
+formula = ~1,
+population = pop_vector2)
+tomtotal <-svytotal(~assault, design =tomcal)
+tomandel <-svymean(~assault,design=tomcal)
+```
+### Frågor
+ 
+
+```{r fragor, results="markup"}
+uff <-rbind(tomtotal,skattattotalen,skattatotalen,tomandel,skattaandelen,skattatandelen) #Binder ihop de olika skattningarna per rad och kablar utskriften
+kable(uff)
+```
+uff
+a) Tolka denna tabell och diskutera hur olika kalibreringsmodeller påverkar skattningarna.
+
+Ï båda fallen gör den tomma skattningen de lägsta skattningarna av andelen som blivit misshandlade.
+I fallen där man har med ålder och kön så blir skattningen lite högre.
+I det sista där man även haft stjärntecken med i kalibreringen har de resulterat i ett nästintill dubbelt så stor intervall med ett väldigt mycket större standardfel.
+
+
+
+b) Vilka intervall täcker de sanna värdena? Varför?
+
+c) Vad betyder den tomma kalibreringsmodellen?
+
+Den tomma kalibreringsmodellen innebär att det inte sker en filtrering på vissa specifika variabler utan att samtliga observationer i studien är med.
+
+d) Vilket antagande om bortfall (MCAR, MAR eller NMAR) innebär de olika kalibreringsmodellerna?
+
+MCAR då bortfallet är helt slumpmässogt och med detta faktum kan resultatet generaliseras mot större populationer och korrekta slutsatser kan dras, detta är dock ganska troligt i vårt fall.
+
+
+\pagebreak
+
+\newpage
+
+# Bortfall i undersökningen Den svenska väljaren från 2010
+
+
+## 4.1 Val av mätvariabel
+
+
+a) Redovisa lite beskrivande statistik om din utvalda mätvariabel, såsom dess fördelning eller andra
+beskrivande mått.
+
+```{r, echo=FALSE}
+aa <- svy2010[c("FR28_3", "Ã…lder", "FR15", "romr","KÃ¶n")]
+svy2010_edited <-aa %>%
+  filter(across(everything(),
+                ~!is.na(.)))
+colnames(svy2010_edited) <-c("FR28_3","Ålder","FR15","Riksområde","Kön")
+```
+
+```{r, echo=FALSE}
+svy2010_edited <- svy2010_edited[-c(345, 498, 1154,1343), ]
+svy2010_edited$Ålder <-as.factor(svy2010_edited$Ålder)
+svy2010_edited$Partisympati <-as.character(svy2010_edited$FR15)
+svy2010_edited$Partisympati[svy2010_edited$FR15 == "Piratpartiet"] <-"Annat Parti" 
+svy2010_edited$Partisympati[svy2010_edited$FR15 == "Feministiskt initiativ"] <-"Annat Parti"
+svy2010_edited$Partisympati[svy2010_edited$FR15 == "Annat parti (v.g. ange vilket)...?:"] <-"Annat Parti"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "1"] <-"Stockholm"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "2"] <-"Östra mellanSverige"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "3"] <-"Småland"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "4"] <-"SydSverige"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "5"] <-"Västsverige"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "6"] <-"Norra mellanSverige"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "7"] <-"Mellersta Norrland"
+svy2010_edited$Riksområde[svy2010_edited$Riksområde == "8"] <-"Övre Norrland"
+```
+
+Utifrån summeringen på vårat objekt som skapas av koden ovan, kan vi se att fördelningen av 
+vår utvalda mätvariabel är FR28_3 som undersöker hur respondenterna ställer sig till Sänkta skatter
+```{r, results="markup"}
+kable(t(summary(svy2010_edited$FR28_3)))
+```
+b) Ta reda på hur stor den aktuella målpopulationen var år 2010 för att kunna skapa en korrekt ändlighetskorrektionsvektor.
+
+I koden nedan skapar vi en ändlighetskorrektion för att kunna använda i objektet senare. Denna baseras på målpopulationen som beskrivs nedan.
+```{R, results = "markup"}
+pop_2010 <-7529673 #Den riktiga populationens storlek
+and_k <- rep(pop_2010, 1463) #Skapar en vektor som är lika lång som mitt urval med populatiionsstorleken för att kunna använda den i formeln.
+head(and_k)
+```
+
+Från statistiska Centralbyrån har vi fått ut att målpopulationen (Antalet människor i åldern 16-85 år 2010) är 7 529 673
+
+
+
+## 4.2 Bakgrundsvariabler 
+
+
+a) Skapa ett surveyobjekt med svy2010-materialet (ta endast med dina mät- och bakgrundsvariabler)
+och skatta mätvariabelns totalantal och andel baserat på detta objekt. Tolka resultatet.
+```{r ,results="markup"}
+Bortfallsanalys_objekt <- svydesign(ids = ~1, #Skapar ett surveyobjekt med min data och min ändlighetskorrektion
+                           data = svy2010_edited,
+                           fpc = and_k)
+
+bortfall_total_skattning <- svytotal(~FR28_3, design =Bortfallsanalys_objekt)
+bortfall_medel_skattning <- svymean(~FR28_3, design =Bortfallsanalys_objekt)
+```
+
+Här kan vi se de skattade medelvärdena
+`r (kable(bortfall_medel_skattning))`
+`r (kable(bortfall_total_skattning))`
+
+
+## 4.3 Bortfallsanalys
+```{r, echo=FALSE, message=FALSE}
+Sannaroster <-c("Annat parti"="NA","Centerpartiet"=390804,"Folkpartiet"=420524,"Kristdemokraterna"=333696,"Miljöpartiet"=437435,"Moderaterna"=1791766,"Socialdemokraterna"=1827497,"Sverigedemokraterna"=339610,"Vänsterpartiet"=334053)
+Sannakon <-c(3768121,3761552)
+Riksomrade <-c(298300,670203,650278,1621372,1116736,1502011,1256879,413894)
+sann_ålder <-c(119236,124827,130835,133635,135031,128220,126409,121227,121129,119574,116418,114738,115801,115392,119170,116575,113330,115353,117441,122348,127807,126318,128657,128752,125617,123839,129357,136108,137305,137628,137186,127863,121840,118010,116355,116938,116255,117527,117658,115735,113018,115564,114303,112819,117211,121086,124734,125170,125944,123950,120794,112085,101818,89038,83971,83221,78742,73610,70071,65447,61982,59287,59438,56888,55651,51235,50088,45476,43237,40351)
+
+Partisympati <-as.factor(svy2010_edited$FR15)
+Parti_sympati_svy <- svytotal(~Partisympati, design = Bortfallsanalys_objekt)
+Parti_sympati_konfint <- confint(Parti_sympati_svy)
+tacks_parti <-c("NA","Ja","Nej","Ja","Nej","Nej","Nej","Ja","Ja")
+Tabell_Partisympati <-cbind(Parti_sympati_konfint,Sannaroster,tacks_parti)
+colnames(Tabell_Partisympati) <-c("2.5%","97.5%","Sanna värden","Täckning")
+Tabell_Partisympati
+
+
+Ages <- as.factor(svy2010_edited$Ålder)
+Ages_Svy <- svytotal(~Ages, design = Bortfallsanalys_objekt)
+Ages_konfint <- confint(Ages_Svy)
+Ages_konfint
+Tabell_ålder <-cbind(Ages_konfint,sann_ålder)
+TACKS_teck<- as.numeric(Tabell_ålder[,3]) > as.numeric(Tabell_ålder[,1]) & as.numeric(Tabell_ålder[,3]) < as.numeric(Tabell_ålder[,2])
+Tabell_ålder <-cbind(Ages_konfint,sann_ålder,TACKS_teck)
+colnames(Tabell_ålder) <-c("2.5%","97.5%","Sanna värden","Täckning")
+
+
+Kön <- as.factor(svy2010_edited$Kön)
+Kön_svy <- svytotal(~Kön, design = Bortfallsanalys_objekt)
+Kön_konfint <- confint(Kön_svy)
+tacks_kon <-c("Ja","Ja")
+Tabell_Kön <-cbind(Kön_konfint,Sannakon,tacks_kon)
+colnames(Tabell_Kön) <-c("2.5%","97.5%","Sanna värden","Täckning")
+Tabell_Kön
+
+Riksområde_svy <- svytotal(~Riksområde, design = Bortfallsanalys_objekt)
+Riksområde_konfint <- confint(Riksområde_svy)
+tacks_riksområde <-c("Ja","Ja","Ja","Ja","Ja","Ja","Ja","Nej")
+tabell_riksområde <-cbind(Riksområde_konfint,Riksomrade,tacks_riksområde)
+colnames(tabell_riksområde) <-c("2.5%","97.5%","Sanna värden","Täckning")
+tabell_riksområde
+```
+
+
+a) Presentera intervallskattningarna och de sanna värdena från populationen i en tabell för varje bak-grundsvariabel. Inkludera också en kolumn som indikerar på om det sanna värdet täcks av intervallet eller ej.
+
+##### Riksområde
+`r kable(tabell_riksområde)`
+Vad gäller riksområde har vi haft en bra intervallskattning bortsett från de enstaka värdet på annat parti och därav är denna bakgrundsvariabel lämplig att ha med i 
+
+##### Ålder
+
+`r kable(Tabell_ålder)`
+Ålder hade väldigt lätt kunna en bakgrund variabel som är med i kalibreringsmodellen, däremot så var täckningsgraden på tok för låg.
+
+##### Kön
+
+`r kable(Tabell_Kön)`
+
+Även kön hade kunna fungera väldigt bra i kalibreringsmodellen då de sanna värdena täcks av intervallskattningarna som skapats, däremot är det dubbelt så många män som kvinnor som är med i urvalet vilket leder till att det inte blir representativt för båda könen.
+
+##### Partisympati
+
+`r kable(Tabell_Partisympati)`
+
+
+
+
+
+
+b) Vilka variabler anser du påverka bortfallet? Vad kan bortfallet bero på?
+
+Enligt vår uppfattning är det partisympati, ålder och riksområde som påverkar bortfallet,
+
+c) Sammanfatta vilka variabler som du kommer inkludera i din kalibreringsmodell.
+
+I kalibreringsmodellen kommer de variablerna som har lägst täckningsgrad vara med, alltså;Partpisympati och ålder.
+
+## 4.4 Kalibrera materialet
+```{r, echo=FALSE}
+#mod_mat_2010 <- model.matrix(~as.factor(FR15) + as.factor(svy2010_edited$Riksområde),)
+ #Pop_vector_2010 <- colSums(mod_mat_2010)
+ #print(kable(Pop_vector_2010))
+```
+
+```{r, echo=FALSE}
+#kkk<- calibrate(Bortfallsanalys_objekt,
+#formula = ~as.factor(FR15)+ as.factor(svy2010_edited$Riksområde),
+#population = Pop_vector_2010)
+```
+
+a) Visa din skapade pop_vector.
+`r kable(t(Populationsvectorn))`
+
+b) Har skattningarna påverkats av att du kalibrerat ditt data? Varför / varför inte?
+
+`r kable(svytotal(~FR28_3, design =kkk))`
+`r kable(svymean(~FR28_3, design =kkk))`
+
+`r kable(svytotal(~FR28_3, design =Bortfallsanalys_objekt))`
+`r kable(svymean(~FR28_3, design =Bortfallsanalys_objekt))`
+
+
+Skattningarna har inte påverkat datat speciellt mycket, däremot är det högre skattningar men med lägre standardfel i den senare kalibreringsmodellen jämfört med den tidigare.
+
+c) Visualisera mätvariabelns fördelning över de fyra bakgrundsvariablerna, exempelvis med stackade
+stapeldiagram. Vilka slutsatser kan du dra utifrån dessa stapeldiagram, uppgifterna i 4.3 och ev.
+effekt utav kalibreringen på dina skattningar?
+
+```{r, results = "markup"}
+#här skapar vi ett nytt dataobjekt med rad 629 som variabel.
+svy_bound <- cbind(svy2010_edited$FR28_3, svy2010_edited$Riksområde, svy2010_edited$FR15, svy2010_edited$Kön, svy2010_edited$Ålder)
+#här sätter vi kolumnnamnen för svy_bound objektet.
+colnames(svy_bound) <- c("Svar", "romr", "Parti", "Kön", "Ålder")
+```
+
+Här kan vi se våran första barplot, där vi kan se att V har en stor andel av sina respondenter som har svarat "Mycket dåligt". Det partiet som har minst antal respondenter som har svarat "Mycket dåligt" är SD, vi kan också se att SD är det parti med störst antal respondenter som svarar "Mycket bra". 
+
+```{r, echo = FALSE}
+parti_data <- data.frame(table(svy_bound[,1], svy_bound[,3])) #svy_bound[,1] är svarsantal, och svy_bound[,2] är parti.
+parti_namn <- c("Annat", "C", "FP", "KD", "MP", "M", "S", "SD", "V")
+# här ändrar vi partinamnen och skapar en data-frame med svarsandel och parti.
+
+ggplot(data = parti_data, aes(fill = Var1,
+                              x = Var2,
+                              y = Freq)) +
+  geom_bar(position = "fill",
+           stat = "identity") +
+  theme_bw() + 
+  labs(x = "Parti",
+       y = "Andel",
+       fill = "Svar") +
+  scale_x_discrete(labels = parti_namn) +
+  scale_fill_discrete(labels = c("Mycket bra",
+                                 "Ganska bra",
+                                 "Likgiltig",
+                                 "Ganska dåligt",
+                                 "Mycket dåligt"))
+```
+
+Här ser vi våran andra grupperade barplot, där vi kan se de olika
+riksområdenas fördelning.
+Dessa ser ganska lika ut, förutom Mellersta Norrland (MN).
+Där vi kan se att det är en ganska stor andel som svarar "Ganska bra".
+
+```{r, echo = FALSE}
+romr_data <- data.frame(table(svy_bound[,1], svy_bound[,2]))
+#skapar data för områden
+ggplot(data = romr_data, aes(fill = Var1,
+                             x = Var2,
+                             y = Freq)) +
+  geom_bar(position = "fill",
+           stat = "identity") +
+  theme_bw() +
+  labs(x = "Område",
+       y = "Andel",
+       fill = "Svar") +
+  scale_x_discrete(labels = c("MN", 
+                              "NMS", 
+                              "ÖMS", 
+                              "ÖN", 
+                              "SMÅ", 
+                              "STH", 
+                              "SYD", 
+                              "VÄST")) +
+  scale_fill_discrete(labels = c("Mycket bra",
+                                 "Ganska bra",
+                                 "Likgiltig",
+                                 "Ganska dåligt",
+                                 "Mycket dåligt"))
+```
+
+Här ser vi den tredje barploten. Denna är svårläst eftersom vi inte har tänkt-  
+- på att inkludera åldersgrupper, 
+detta skulle egentligen inkluderas ovanför men det glömdes och tiden ran ut.
+
+```{r, echo = FALSE}
+age_data <- data.frame(table(svy_bound[,1], svy_bound[,5]))
+ggplot(data = age_data, aes(fill = Var1,
+                            x = Var2,
+                            y = Freq)) +
+  geom_bar(position = "fill",
+           stat = "identity") +
+  theme_bw()+
+  labs(y = "Andel",
+       x = "Ålder",
+       fill = "Svar") +
+  scale_fill_discrete(labels = c("Mycket bra",
+                                 "Ganska bra",
+                                 "Likgiltig",
+                                 "Ganska dåligt",
+                                 "Mycket dåligt"))
+```
+
+Här ser vi den fjärde och sista barplotten, som visar våra könsfördelningar. 
+Dessa är också ganska lika, men vi kan se att kvinnor- 
+- i helhet är lite nöjdare jämfört med män.
+
+```{r, echo = FALSE}
+sex_data <- data.frame(table(svy_bound[,1], svy_bound[,4]))
+ggplot(data = sex_data, aes(fill = Var1,
+                            x = Var2,
+                            y = Freq)) +
+  geom_bar(position = "fill",
+           stat = "identity") +
+  theme_bw() +
+  labs(y = "Andel", 
+       x = "Kön",
+       fill = "Svar") +
+  scale_fill_discrete(labels = c("Mycket bra",
+                                 "Ganska bra",
+                                 "Likgiltig",
+                                 "Ganska dåligt",
+                                 "Mycket dåligt")) +
+  scale_x_discrete(labels = c("Man", "Kvinna"))
+
+```
+
+\pagebreak
+Vi tackar för oss, med vänliga hälsningar Michael och Åke
+\pagebreak
+
+# Referenser
+Hagevi, Magnus. 2011. Den Svenska Väljaren. 1. uppl. Umeå: Boréa.
+
+Irlander, Åsa, and Thomas Hvitfeldt. 2012. NTU 2011 : Om Utsatthet, 
+Trygghet Och Förtroende. Stockholm: Brottsförebyggande rådet.
+\pagebreak
+## Bilaga
